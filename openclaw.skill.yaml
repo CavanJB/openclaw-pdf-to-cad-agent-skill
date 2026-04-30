@@ -1,6 +1,7 @@
 name: openclaw-pdf-to-cad
 display_name: OpenClaw PDF to CAD
 kind: agent_skill
+target_runtime: openclaw
 runtime: local_script
 description: Convert PDF engineering drawings into CAD-oriented delivery packages for OpenClaw agents.
 entrypoint: skills/openclaw-pdf-to-cad/scripts/run_pdf_to_cad.sh
@@ -29,4 +30,10 @@ quality_policy:
   report_needs_review_explicitly: true
 install_targets:
   openclaw_default: ~/.openclaw/workspace-cadbot/skills/openclaw-pdf-to-cad
-  codex_compatible: ~/.codex/skills/openclaw-pdf-to-cad
+verification:
+  command: scripts/verify_openclaw_install.sh
+  required_files:
+    - SKILL.md
+    - openclaw.skill.json
+    - scripts/run_pdf_to_cad.sh
+    - scripts/openclaw_pdf_to_cad.py

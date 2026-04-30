@@ -2,9 +2,9 @@
 
 ## 中文
 
-这个仓库的主目标是 OpenClaw Agent Skill。它同时采用 Codex 兼容的
-`SKILL.md` 格式，是为了让本地 agent 能直接读取和执行，不代表它只能给
-Codex 使用。
+这个仓库的主目标是 OpenClaw Agent Skill。`SKILL.md` 是可移植的 agent
+skill 描述文件，不代表它只能给某一个运行器使用。OpenClaw 的安装入口、
+manifest 和验证脚本是本仓库的主路径。
 
 ### 推荐安装方式
 
@@ -26,6 +26,44 @@ cd openclaw-pdf-to-cad-agent-skill
 ./scripts/install_openclaw.sh --skills-dir /path/to/openclaw/skills
 ```
 
+### 安装验证
+
+安装后运行：
+
+```bash
+./scripts/verify_openclaw_install.sh
+```
+
+如果你的 OpenClaw skills 目录不同：
+
+```bash
+./scripts/verify_openclaw_install.sh --skills-dir /path/to/openclaw/skills
+```
+
+成功时会返回类似：
+
+```json
+{
+  "ok": true,
+  "skill": "openclaw-pdf-to-cad",
+  "target_runtime": "openclaw"
+}
+```
+
+安装后的 skill 目录里应该包含：
+
+```text
+SKILL.md
+openclaw.skill.json
+OPENCLAW_INSTALL.json
+scripts/run_pdf_to_cad.sh
+scripts/openclaw_pdf_to_cad.py
+```
+
+如果某个 agent 说“这个 skill 只能给 Codex 用”，请让它优先读取
+`openclaw.skill.json` 和 `OPENCLAW_INSTALL.json`。这两个文件明确声明
+`target_runtime` 是 `openclaw`。
+
 ### 用户测试 Prompt
 
 ```text
@@ -43,9 +81,9 @@ cd openclaw-pdf-to-cad-agent-skill
 
 ## English
 
-This repository is primarily an OpenClaw Agent Skill. It also uses a
-Codex-compatible `SKILL.md` format so local agents can read and run it directly;
-that does not mean it is limited to Codex.
+This repository is primarily an OpenClaw Agent Skill. `SKILL.md` is a portable
+agent-skill descriptor, but the OpenClaw installer, manifest, and verifier are
+the primary path for this repository.
 
 ### Recommended Installation
 
@@ -65,4 +103,28 @@ If your OpenClaw skills directory is different:
 
 ```bash
 ./scripts/install_openclaw.sh --skills-dir /path/to/openclaw/skills
+```
+
+### Verify Installation
+
+After installing, run:
+
+```bash
+./scripts/verify_openclaw_install.sh
+```
+
+If your OpenClaw skills directory is different:
+
+```bash
+./scripts/verify_openclaw_install.sh --skills-dir /path/to/openclaw/skills
+```
+
+On success it returns JSON similar to:
+
+```json
+{
+  "ok": true,
+  "skill": "openclaw-pdf-to-cad",
+  "target_runtime": "openclaw"
+}
 ```

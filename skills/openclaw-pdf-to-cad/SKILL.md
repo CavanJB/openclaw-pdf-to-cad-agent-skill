@@ -1,13 +1,13 @@
 ---
 name: openclaw-pdf-to-cad
-description: OpenClaw Agent Skill for converting engineering drawing PDFs into CAD-oriented delivery packages, packaged with a Codex-compatible SKILL.md so local agents can run it directly. Use this skill when the user provides a PDF drawing and wants DXF/CAD output, preview files, and a quality report. Do not use it for STEP, IGES, STL, SLDPRT, SLDASM, SolidWorks, or other 3D model conversion tasks.
+description: OpenClaw Agent Skill for converting engineering drawing PDFs into CAD-oriented delivery packages. Use this skill when an OpenClaw user provides a PDF engineering drawing and wants DXF/CAD output, preview files, a delivery package, and a quality report. Do not use it for STEP, IGES, STL, SLDPRT, SLDASM, SolidWorks, or other 3D model conversion tasks.
 ---
 
 # OpenClaw PDF to CAD
 
-This is an OpenClaw Agent Skill packaged in a Codex-compatible `SKILL.md` format.
-It is not a subagent. It is a callable local skill that OpenClaw/Jarvis or a
-Codex-compatible agent can invoke when a PDF engineering drawing is provided.
+This is an OpenClaw Agent Skill. It is not a subagent and not a 3D/SolidWorks
+converter. It is a callable local skill that OpenClaw/Jarvis can invoke when a
+PDF engineering drawing is provided.
 
 ## Scope
 
@@ -20,12 +20,13 @@ Use this skill for PDF engineering drawing conversion only.
 
 ## Required Behavior
 
-1. Verify that the source file is a PDF before running the script.
-2. Run the bundled script from this skill folder.
-3. Return the delivery folder, zip path, recommended CAD file, preview PDF, and quality status.
-4. If the report says `needs_review`, explain why instead of claiming a perfect conversion.
-5. Never invent dimensions or annotations that were not present or confidently extracted from the PDF.
-6. Never send a raw DXF alone when the delivery folder exists.
+1. Treat OpenClaw as the primary runtime for this skill.
+2. Verify that the source file is a PDF before running the script.
+3. Run the bundled script from this skill folder.
+4. Return the delivery folder, zip path, recommended CAD file, preview PDF, and quality status.
+5. If the report says `needs_review`, explain why instead of claiming a perfect conversion.
+6. Never invent dimensions or annotations that were not present or confidently extracted from the PDF.
+7. Never send a raw DXF alone when the delivery folder exists.
 
 ## Command
 

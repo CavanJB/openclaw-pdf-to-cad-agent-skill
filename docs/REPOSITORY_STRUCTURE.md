@@ -9,6 +9,7 @@
 ├── skills/
 │   └── openclaw-pdf-to-cad/
 │       ├── SKILL.md
+│       ├── openclaw.skill.json
 │       ├── agents/
 │       │   └── openai.yaml
 │       └── scripts/
@@ -20,6 +21,8 @@
 │   └── REPOSITORY_STRUCTURE.md
 ├── scripts/
 │   └── install.sh
+│   ├── install_openclaw.sh
+│   └── verify_openclaw_install.sh
 ├── tests/
 │   └── test_smoke.py
 ├── README.md
@@ -32,6 +35,7 @@
 
 - `skills/`：每一个可安装 agent skill 单独占一个子目录。
 - `skills/<skill-name>/SKILL.md`：该 skill 的触发说明、边界和使用流程。
+- `skills/<skill-name>/openclaw.skill.json`：OpenClaw 优先读取的运行器、输入输出和质量策略 manifest。
 - `skills/<skill-name>/scripts/`：该 skill 专属脚本。
 - `docs/`：仓库级架构、发布、边界、扩展说明。
 - `scripts/`：仓库级安装或维护脚本，不放客户转换脚本。
@@ -58,6 +62,7 @@ This repository is organized as a reusable Agent Skill package so future open-so
 ├── skills/
 │   └── openclaw-pdf-to-cad/
 │       ├── SKILL.md
+│       ├── openclaw.skill.json
 │       ├── agents/
 │       │   └── openai.yaml
 │       └── scripts/
@@ -68,7 +73,9 @@ This repository is organized as a reusable Agent Skill package so future open-so
 │   ├── PUBLISHING.md
 │   └── REPOSITORY_STRUCTURE.md
 ├── scripts/
-│   └── install.sh
+│   ├── install.sh
+│   ├── install_openclaw.sh
+│   └── verify_openclaw_install.sh
 ├── tests/
 │   └── test_smoke.py
 ├── README.md
@@ -81,6 +88,7 @@ This repository is organized as a reusable Agent Skill package so future open-so
 
 - `skills/`: one installable agent skill per subdirectory.
 - `skills/<skill-name>/SKILL.md`: trigger rules, boundaries, and workflow.
+- `skills/<skill-name>/openclaw.skill.json`: OpenClaw-first runtime, input/output, and quality-policy manifest.
 - `skills/<skill-name>/scripts/`: scripts owned by that skill.
 - `docs/`: repository-level architecture, publishing, boundary, and extension notes.
 - `scripts/`: repository-level setup or maintenance scripts.

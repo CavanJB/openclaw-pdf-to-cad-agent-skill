@@ -66,12 +66,16 @@ python3 -m venv "$DEST_DIR/.venv"
 cat > "$DEST_DIR/OPENCLAW_INSTALL.json" <<EOF
 {
   "skill": "$SKILL_NAME",
+  "kind": "agent_skill",
+  "target_runtime": "openclaw",
   "installed_to": "$DEST_DIR",
   "source_repository": "$ROOT",
   "entrypoint": "$DEST_DIR/scripts/run_pdf_to_cad.sh",
+  "manifest": "$DEST_DIR/openclaw.skill.json",
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 }
 EOF
 
 echo "Installed OpenClaw skill: $DEST_DIR"
 echo "Entrypoint: $DEST_DIR/scripts/run_pdf_to_cad.sh"
+echo "Verify with: $ROOT/scripts/verify_openclaw_install.sh --skills-dir $DEFAULT_SKILLS_DIR"

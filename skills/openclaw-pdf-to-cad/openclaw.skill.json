@@ -1,0 +1,33 @@
+{
+  "schema_version": "0.1",
+  "name": "openclaw-pdf-to-cad",
+  "display_name": "OpenClaw PDF to CAD",
+  "kind": "agent_skill",
+  "target_runtime": "openclaw",
+  "runtime": "local_script",
+  "description": "Convert PDF engineering drawings into CAD-oriented delivery packages for OpenClaw agents.",
+  "entrypoint": "scripts/run_pdf_to_cad.sh",
+  "supported_inputs": [".pdf"],
+  "unsupported_inputs": [".step", ".stp", ".iges", ".igs", ".stl", ".sldprt", ".sldasm"],
+  "outputs": [
+    "layered DXF",
+    "optional DWG",
+    "PNG preview",
+    "PDF preview",
+    "quality_report.json",
+    "delivery README",
+    "zip package"
+  ],
+  "quality_policy": {
+    "no_guessing_dimensions": true,
+    "scanned_or_mixed_pdf_requires_review": true,
+    "report_needs_review_explicitly": true
+  },
+  "agent_contract": {
+    "primary_runtime": "OpenClaw",
+    "is_subagent": false,
+    "is_3d_converter": false,
+    "requires_pdf_input": true,
+    "must_return_delivery_package": true
+  }
+}

@@ -45,3 +45,35 @@ def test_pdf_to_cad_smoke(tmp_path: Path) -> None:
     assert "PDF_GEOMETRY" in layers
     assert "PDF_DIMENSIONS" in layers
     assert len(list(doc.modelspace())) > 0
+
+
+def test_openclaw_install_and_verify(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    install_script = root / "scripts" / "install_openclaw.sh"
+    verify_script = root / "scripts" / "verify_openclaw_install.sh"
+    skills_dir = tmp_path / "openclaw-skills"
+
+    subprocess.run(
+        [str(install_script), "--skills-dir", str(skills_dir)],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    result = subprocess.run(
+        [str(verify_script), "--skills-dir", str(skills_dir)],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["target_runtime"] == "openclaw"
+
+    installed_skill = skills_dir / "openclaw-pdf-to-cad"
+    manifest = json.loads((installed_skill / "openclaw.skill.json").read_text())
+    install_record = json.loads((installed_skill / "OPENCLAW_INSTALL.json").read_text())
+    assert manifest["target_runtime"] == "openclaw"
+    assert install_record["target_runtime"] == "openclaw"
+    assert (installed_skill / "scripts" / "run_pdf_to_cad.sh").exists()

@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Runtime outputs
+outputs/
+deliveries/
+data/
+*.zip
+*.dxf
+*.dwg
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+*.bmp
+*.log
+
+# Local secrets/config
+.env
+*.env
+.DS_Store
+
+# Do not commit customer drawings or generated packages.
+customer_samples/
+private_samples/

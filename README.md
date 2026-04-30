@@ -74,6 +74,22 @@ source .venv/bin/activate
 pytest -q
 ```
 
+### 仓库结构
+
+```text
+skills/openclaw-pdf-to-cad/        # 可安装的 Agent Skill
+skills/openclaw-pdf-to-cad/scripts # 转换脚本入口
+docs/                              # 架构、发布和仓库结构说明
+scripts/                           # 仓库级安装脚本
+tests/                             # 不含真实图纸的自动化测试
+```
+
+后续如果继续开源新的图纸转换能力，建议按同样方式新增到 `skills/<skill-name>/`，不要把不同功能混在一个脚本目录里。
+
+### 贡献边界
+
+请不要提交真实客户图纸、测试图纸、生成结果、日志、密钥、本机路径或私有配置。更多说明见 [CONTRIBUTING.md](CONTRIBUTING.md) 和 [docs/REPOSITORY_STRUCTURE.md](docs/REPOSITORY_STRUCTURE.md)。
+
 ### 开源协议
 
 本项目使用 MIT License。
@@ -149,6 +165,22 @@ The smoke test creates a synthetic PDF in a temporary directory. No real drawing
 source .venv/bin/activate
 pytest -q
 ```
+
+### Repository Layout
+
+```text
+skills/openclaw-pdf-to-cad/        # Installable Agent Skill
+skills/openclaw-pdf-to-cad/scripts # Conversion entrypoints
+docs/                              # Architecture, publishing, and structure docs
+scripts/                           # Repository-level setup scripts
+tests/                             # Automated tests without real drawings
+```
+
+If more drawing-conversion skills are open-sourced later, add them under `skills/<skill-name>/` and keep each skill isolated.
+
+### Contribution Boundary
+
+Do not commit real customer drawings, private test drawings, generated packages, logs, secrets, local paths, or private configuration. See [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/REPOSITORY_STRUCTURE.md](docs/REPOSITORY_STRUCTURE.md).
 
 ### License
 

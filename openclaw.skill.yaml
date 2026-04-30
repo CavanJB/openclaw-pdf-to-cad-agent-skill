@@ -1,0 +1,32 @@
+name: openclaw-pdf-to-cad
+display_name: OpenClaw PDF to CAD
+kind: agent_skill
+runtime: local_script
+description: Convert PDF engineering drawings into CAD-oriented delivery packages for OpenClaw agents.
+entrypoint: skills/openclaw-pdf-to-cad/scripts/run_pdf_to_cad.sh
+skill_dir: skills/openclaw-pdf-to-cad
+supported_inputs:
+  - .pdf
+unsupported_inputs:
+  - .step
+  - .stp
+  - .iges
+  - .igs
+  - .stl
+  - .sldprt
+  - .sldasm
+outputs:
+  - layered DXF
+  - optional DWG
+  - PNG preview
+  - PDF preview
+  - quality_report.json
+  - delivery README
+  - zip package
+quality_policy:
+  no_guessing_dimensions: true
+  scanned_or_mixed_pdf_requires_review: true
+  report_needs_review_explicitly: true
+install_targets:
+  openclaw_default: ~/.openclaw/workspace-cadbot/skills/openclaw-pdf-to-cad
+  codex_compatible: ~/.codex/skills/openclaw-pdf-to-cad

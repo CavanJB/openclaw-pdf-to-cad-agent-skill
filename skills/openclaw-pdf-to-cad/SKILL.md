@@ -1,9 +1,13 @@
 ---
 name: openclaw-pdf-to-cad
-description: Convert engineering drawing PDFs into CAD-oriented delivery packages for OpenClaw or Codex agents. Use this skill when the user provides a PDF drawing and wants DXF/CAD output, preview files, and a quality report. Do not use it for STEP, IGES, STL, SLDPRT, SLDASM, SolidWorks, or other 3D model conversion tasks.
+description: OpenClaw Agent Skill for converting engineering drawing PDFs into CAD-oriented delivery packages, packaged with a Codex-compatible SKILL.md so local agents can run it directly. Use this skill when the user provides a PDF drawing and wants DXF/CAD output, preview files, and a quality report. Do not use it for STEP, IGES, STL, SLDPRT, SLDASM, SolidWorks, or other 3D model conversion tasks.
 ---
 
 # OpenClaw PDF to CAD
+
+This is an OpenClaw Agent Skill packaged in a Codex-compatible `SKILL.md` format.
+It is not a subagent. It is a callable local skill that OpenClaw/Jarvis or a
+Codex-compatible agent can invoke when a PDF engineering drawing is provided.
 
 ## Scope
 

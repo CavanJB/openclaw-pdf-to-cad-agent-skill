@@ -6,7 +6,7 @@
 
 ## 中文说明
 
-`openclaw-pdf-to-cad-agent-skill` 是一个独立的 OpenClaw / Codex Agent Skill 框架，用于把 PDF 工程图转换成 CAD 交付包。
+`openclaw-pdf-to-cad-agent-skill` 是一个独立的 OpenClaw Agent Skill 框架，用于把 PDF 工程图转换成 CAD 交付包。仓库同时采用 Codex 兼容的 `SKILL.md` 格式，方便本地 agent 读取和执行，但主适配对象是 OpenClaw。
 
 这个仓库是公开版基础框架，只包含 PDF/图片类图纸转换链路，不包含任何客户图纸、测试图纸、生成结果、日志、Windows 桥接配置、SolidWorks/STEP 三维转换代码或个人环境信息。
 
@@ -40,11 +40,31 @@ source .venv/bin/activate
 ### 作为 OpenClaw Skill 安装
 
 ```bash
+./scripts/install_openclaw.sh
+```
+
+默认安装到：
+
+```text
+~/.openclaw/workspace-cadbot/skills/openclaw-pdf-to-cad
+```
+
+如果你的 OpenClaw skills 目录不同：
+
+```bash
+./scripts/install_openclaw.sh --skills-dir /path/to/openclaw/skills
+```
+
+更详细说明见 [docs/OPENCLAW_INSTALL.md](docs/OPENCLAW_INSTALL.md)。
+
+### Codex 兼容安装（可选）
+
+如果你希望 Codex 也能直接调用这个 skill，可以额外建立软链接：
+
+```bash
 mkdir -p ~/.codex/skills
 ln -s "$PWD/skills/openclaw-pdf-to-cad" ~/.codex/skills/openclaw-pdf-to-cad
 ```
-
-之后可以让 OpenClaw / Codex 在收到 PDF 工程图时调用 `openclaw-pdf-to-cad`。
 
 ### 交付文件
 
@@ -98,7 +118,7 @@ tests/                             # 不含真实图纸的自动化测试
 
 ## English
 
-`openclaw-pdf-to-cad-agent-skill` is a standalone OpenClaw / Codex Agent Skill framework for converting engineering drawing PDFs into CAD-oriented delivery packages.
+`openclaw-pdf-to-cad-agent-skill` is a standalone OpenClaw Agent Skill framework for converting engineering drawing PDFs into CAD-oriented delivery packages. It also uses a Codex-compatible `SKILL.md` format so local agents can read and run it directly, but the primary target is OpenClaw.
 
 This public repository contains only the PDF/image drawing workflow. It does not include customer drawings, private test drawings, generated packages, logs, Windows bridge settings, SolidWorks/STEP 3D conversion code, or local machine-specific information.
 
@@ -132,11 +152,31 @@ The command creates a delivery folder under `outputs/`.
 ### Install As An OpenClaw Skill
 
 ```bash
+./scripts/install_openclaw.sh
+```
+
+Default install target:
+
+```text
+~/.openclaw/workspace-cadbot/skills/openclaw-pdf-to-cad
+```
+
+If your OpenClaw skills directory is different:
+
+```bash
+./scripts/install_openclaw.sh --skills-dir /path/to/openclaw/skills
+```
+
+See [docs/OPENCLAW_INSTALL.md](docs/OPENCLAW_INSTALL.md) for details.
+
+### Codex-Compatible Install (Optional)
+
+If you also want Codex to call this skill directly, create a symlink:
+
+```bash
 mkdir -p ~/.codex/skills
 ln -s "$PWD/skills/openclaw-pdf-to-cad" ~/.codex/skills/openclaw-pdf-to-cad
 ```
-
-Then ask OpenClaw / Codex to use `openclaw-pdf-to-cad` when a PDF engineering drawing is provided.
 
 ### Delivery Output
 

@@ -27,6 +27,8 @@ Use this skill for PDF engineering drawing conversion only.
 5. If the report says `needs_review`, explain why instead of claiming a perfect conversion.
 6. Never invent dimensions or annotations that were not present or confidently extracted from the PDF.
 7. Never send a raw DXF alone when the delivery folder exists.
+8. If Chinese/CJK text is present, preserve it as Unicode text where possible and report `cjk_text_count`.
+9. If extracted text contains `??`, replacement glyphs, or OCR fallback warnings, treat the result as `needs_review`; do not present those markers as final customer annotations.
 
 ## Command
 
@@ -52,9 +54,15 @@ The script prints JSON. Use these fields in the agent response:
 - `delivery_dir`: folder containing all deliverables
 - `zip_path`: zipped delivery package
 - `recommended_cad_file`: prefer DWG if present, otherwise DXF
+- `dwg_path`: optional DWG path when conversion is configured
 - `preview_pdf`: human-readable preview
 - `quality_report`: detailed machine-readable report
+- `cjk_text_count`: number of preserved Chinese/CJK text entities
+- `garbled_text_count`: number of unresolved text entities that extracted as question marks or replacement glyphs
+- `ocr_text_count`: number of text entities recovered by OCR fallback
 - `findings`: limitations and review notes
+
+When `dwg_path` exists but `recommended_cad_file` remains DXF, tell the user that the DWG was generated but Unicode/CJK fidelity needs manual CAD verification before customer delivery.
 
 ## Handoff Message Template
 

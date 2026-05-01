@@ -21,7 +21,10 @@
   "quality_policy": {
     "no_guessing_dimensions": true,
     "scanned_or_mixed_pdf_requires_review": true,
-    "report_needs_review_explicitly": true
+    "report_needs_review_explicitly": true,
+    "preserve_unicode_cjk_text": true,
+    "garbled_text_requires_review": true,
+    "do_not_recommend_unverified_cjk_dwg": true
   },
   "agent_contract": {
     "primary_runtime": "OpenClaw",

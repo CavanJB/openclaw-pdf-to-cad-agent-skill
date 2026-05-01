@@ -76,7 +76,27 @@ scripts/openclaw_pdf_to_cad.py
 2. 同时提供 PDF 或 PNG 预览。
 3. 提供质量报告，说明是否需要人工复核。
 4. 不要猜测缺失尺寸，不要伪造标注。
-5. 如果原图是扫描图或识别不充分，请明确标记 needs_review。
+5. 尽量保留中文标注；如果中文变成问号，请明确标记 needs_review。
+6. 如果原图是扫描图或识别不充分，请明确标记 needs_review。
+```
+
+### 可选 OCR 增强
+
+如果 PDF 显示中文正常，但提取出的文字变成 `??/????`，skill 会在检测到本机
+`tesseract` 时尝试 OCR 兜底。未安装 OCR 时，相关文字会进入
+`PDF_TEXT_UNCERTAIN` 图层并触发 `needs_review`，不会被冒充为正确标注。
+
+macOS 可选安装方式：
+
+```bash
+brew install tesseract tesseract-lang
+```
+
+可通过环境变量指定 OCR 程序或语言：
+
+```bash
+export OPENCLAW_TESSERACT=/opt/homebrew/bin/tesseract
+export OPENCLAW_OCR_LANGS=chi_sim+eng
 ```
 
 ## English
@@ -127,4 +147,24 @@ On success it returns JSON similar to:
   "skill": "openclaw-pdf-to-cad",
   "target_runtime": "openclaw"
 }
+```
+
+### Optional OCR Enhancement
+
+If a PDF displays Chinese correctly but its extracted text becomes `??/????`,
+the skill will try OCR fallback when `tesseract` is available. Without OCR, the
+affected text is moved to the `PDF_TEXT_UNCERTAIN` layer and the package is
+marked `needs_review` instead of pretending the annotation is correct.
+
+Optional macOS setup:
+
+```bash
+brew install tesseract tesseract-lang
+```
+
+Optional environment variables:
+
+```bash
+export OPENCLAW_TESSERACT=/opt/homebrew/bin/tesseract
+export OPENCLAW_OCR_LANGS=chi_sim+eng
 ```

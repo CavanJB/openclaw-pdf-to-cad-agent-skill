@@ -3,19 +3,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
 import subprocess
+import tempfile
 import zipfile
-from dataclasses import asdict, dataclass, field
+from collections import Counter
+from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Sequence
 
 import ezdxf
 import fitz
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas
 
@@ -30,6 +34,7 @@ LAYER_SPECS = {
     "PDF_DIMENSIONS": 3,
     "PDF_TITLE_BLOCK": 5,
     "PDF_TEXT": 2,
+    "PDF_TEXT_UNCERTAIN": 1,
     "PDF_IMAGE_PLACEHOLDER": 6,
     "PDF_PAGE_FRAME": 8,
     "REVIEW_NOTES": 1,
@@ -52,7 +57,18 @@ TITLE_KEYWORDS = (
     "revision",
 )
 
-DIMENSION_RE = re.compile(r"(?<![A-Za-z0-9])(?:R|Phi|Dia|M)?\s*\d+(?:\.\d+)?(?:\s*[xX*]\s*\d+(?:\.\d+)?)*")
+DIMENSION_RE = re.compile(
+    r"(?<![A-Za-z0-9])(?:R|M|Phi|DIA|Dia|THK|T=|Φ|Ø|⌀)?\s*\d+(?:\.\d+)?(?:\s*[xX*×]\s*\d+(?:\.\d+)?)*"
+)
+CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+GARBLED_RE = re.compile(r"(?:\?{2,}|�|□)")
+DEFAULT_CJK_FONT = "Arial Unicode.ttf"
+TEXT_STYLE_FONTS = {
+    "OPENCLAW_CJK": DEFAULT_CJK_FONT,
+    "OPENCLAW_CJK_HEI": "STHeiti Medium.ttc",
+    "OPENCLAW_CJK_SONG": DEFAULT_CJK_FONT,
+    "OPENCLAW_LATIN": DEFAULT_CJK_FONT,
+}
 
 
 @dataclass
@@ -67,6 +83,16 @@ class PageStats:
 
 
 @dataclass
+class TextCandidate:
+    text: str
+    bbox: fitz.Rect
+    size: float
+    rotation: float
+    source: str
+    font_name: str | None = None
+
+
+@dataclass
 class ConversionReport:
     status: str
     source_pdf: str
@@ -78,6 +104,13 @@ class ConversionReport:
     text_count: int
     dimension_text_count: int
     title_text_count: int
+    cjk_text_count: int
+    garbled_text_count: int
+    ocr_text_count: int
+    annotation_text_count: int
+    word_fallback_text_count: int
+    raw_char_text_count: int
+    text_source_counts: dict[str, int]
     layers: list[str]
     dxf_path: str
     dwg_path: str | None
@@ -95,8 +128,71 @@ def safe_name(value: str) -> str:
     return name or "pdf_to_cad_delivery"
 
 
+def clean_text(value: str | None) -> str:
+    if not value:
+        return ""
+    cleaned = value.replace("\u00a0", " ").replace("\u200b", "")
+    cleaned = re.sub(r"\s+", " ", cleaned)
+    return cleaned.strip()
+
+
+def contains_cjk(value: str) -> bool:
+    return bool(CJK_RE.search(value))
+
+
+def garbled_score(value: str) -> float:
+    compact = re.sub(r"\s+", "", value or "")
+    if not compact:
+        return 0.0
+    suspicious = compact.count("?") + compact.count("�") + compact.count("□")
+    return suspicious / max(len(compact), 1)
+
+
+def looks_garbled(value: str) -> bool:
+    compact = re.sub(r"\s+", "", value or "")
+    if not compact:
+        return False
+    return bool(GARBLED_RE.search(compact)) or garbled_score(compact) >= 0.2
+
+
+def normalize_ocr_text(value: str) -> str:
+    text = clean_text(value)
+    text = text.replace("|", "丨") if contains_cjk(text) else text
+    return text.strip(" -_")
+
+
+def normalize_font_name(font_name: str | None) -> str:
+    if not font_name:
+        return ""
+    return font_name.split("+")[-1].strip().lower()
+
+
+def detect_text_style(text: str, font_name: str | None = None) -> str:
+    normalized = normalize_font_name(font_name)
+    if contains_cjk(text):
+        if "hei" in normalized or "simhei" in normalized:
+            return "OPENCLAW_CJK_HEI"
+        if "song" in normalized or "simsun" in normalized:
+            return "OPENCLAW_CJK_SONG"
+        return "OPENCLAW_CJK"
+    return "OPENCLAW_LATIN"
+
+
 def cad_point(point: fitz.Point, page_height: float, x_offset: float) -> tuple[float, float]:
     return (round(point.x + x_offset, 4), round(page_height - point.y, 4))
+
+
+def line_rotation_deg(line: dict) -> float:
+    direction = line.get("dir") or (1.0, 0.0)
+    try:
+        dx = float(direction[0])
+        dy = float(direction[1])
+    except Exception:
+        return 0.0
+    angle = math.degrees(math.atan2(-dy, dx))
+    if abs(angle) < 0.1:
+        return 0.0
+    return round(angle, 4)
 
 
 def rect_points(rect: fitz.Rect, page_height: float, x_offset: float) -> list[tuple[float, float]]:
@@ -131,12 +227,286 @@ def text_layer(text: str) -> str:
     return "PDF_TEXT"
 
 
+def rect_area(rect: fitz.Rect) -> float:
+    return max(0.0, rect.x1 - rect.x0) * max(0.0, rect.y1 - rect.y0)
+
+
+def overlap_ratio(a: fitz.Rect, b: fitz.Rect) -> float:
+    x0 = max(a.x0, b.x0)
+    y0 = max(a.y0, b.y0)
+    x1 = min(a.x1, b.x1)
+    y1 = min(a.y1, b.y1)
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    intersection = (x1 - x0) * (y1 - y0)
+    smallest = min(rect_area(a), rect_area(b))
+    if smallest <= 0:
+        return 0.0
+    return intersection / smallest
+
+
+def normalized_text_key(text: str) -> str:
+    return re.sub(r"\s+", "", text).lower()
+
+
+def candidate_is_duplicate(candidate: TextCandidate, accepted: list[TextCandidate]) -> bool:
+    candidate_key = normalized_text_key(candidate.text)
+    for existing in accepted:
+        existing_key = normalized_text_key(existing.text)
+        if not candidate_key or not existing_key:
+            continue
+        if overlap_ratio(candidate.bbox, existing.bbox) < 0.45:
+            continue
+        if candidate_key == existing_key:
+            return True
+        if candidate_key in existing_key or existing_key in candidate_key:
+            return True
+    return False
+
+
+def add_text_candidate(pool: list[TextCandidate], candidate: TextCandidate) -> None:
+    text = clean_text(candidate.text)
+    if not text:
+        return
+    if candidate.bbox.is_empty or candidate.bbox.is_infinite:
+        return
+    pool.append(
+        TextCandidate(
+            text=text,
+            bbox=fitz.Rect(candidate.bbox),
+            size=max(1.5, min(24.0, float(candidate.size or 4.0))),
+            rotation=candidate.rotation,
+            source=candidate.source,
+            font_name=candidate.font_name,
+        )
+    )
+
+
+@lru_cache(maxsize=1)
+def find_tesseract() -> str | None:
+    configured = os.getenv("OPENCLAW_TESSERACT", "").strip()
+    candidates = [configured] if configured else []
+    found = shutil.which("tesseract")
+    if found:
+        candidates.append(found)
+    for candidate in candidates:
+        if candidate and Path(candidate).exists():
+            return candidate
+    return None
+
+
+def ocr_text_candidate(page: fitz.Page, candidate: TextCandidate) -> str:
+    tesseract = find_tesseract()
+    if not tesseract:
+        return ""
+    clip = fitz.Rect(candidate.bbox)
+    clip.x0 = max(0.0, clip.x0 - 3.0)
+    clip.y0 = max(0.0, clip.y0 - 3.0)
+    clip.x1 = min(page.rect.width, clip.x1 + 3.0)
+    clip.y1 = min(page.rect.height, clip.y1 + 3.0)
+    if clip.is_empty or clip.width < 1.0 or clip.height < 1.0:
+        return ""
+
+    langs = os.getenv("OPENCLAW_OCR_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
+    with tempfile.TemporaryDirectory(prefix="openclaw-ocr-") as tmpdir:
+        image_path = Path(tmpdir) / "candidate.png"
+        try:
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(4, 4), clip=clip, alpha=False)
+            pixmap.save(image_path)
+            result = subprocess.run(
+                [tesseract, str(image_path), "stdout", "-l", langs, "--psm", "7", "--dpi", "300"],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=30,
+            )
+        except Exception:
+            return ""
+    if result.returncode != 0:
+        return ""
+    text = normalize_ocr_text(result.stdout)
+    if not text or looks_garbled(text):
+        return ""
+    return text
+
+
+def repair_garbled_candidate(page: fitz.Page, candidate: TextCandidate) -> TextCandidate:
+    if not looks_garbled(candidate.text):
+        return candidate
+    ocr_text = ocr_text_candidate(page, candidate)
+    if ocr_text:
+        return replace(candidate, text=ocr_text, source="ocr_fallback")
+    return replace(candidate, source="garbled_unresolved")
+
+
+def union_rects(rects: list[fitz.Rect]) -> fitz.Rect:
+    result = fitz.Rect(rects[0])
+    for rect in rects[1:]:
+        result.include_rect(rect)
+    return result
+
+
+def extract_span_candidates(page: fitz.Page) -> tuple[list[TextCandidate], list[fitz.Rect]]:
+    candidates: list[TextCandidate] = []
+    image_bboxes: list[fitz.Rect] = []
+    text_dict = page.get_text("dict")
+    for block in text_dict.get("blocks", []):
+        if block.get("type") == 1:
+            image_bboxes.append(fitz.Rect(block.get("bbox")))
+            continue
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            rotation = line_rotation_deg(line)
+            for span in line.get("spans", []):
+                text = clean_text(span.get("text"))
+                if not text:
+                    continue
+                bbox = fitz.Rect(span.get("bbox"))
+                add_text_candidate(
+                    candidates,
+                    TextCandidate(
+                        text=text,
+                        bbox=bbox,
+                        size=float(span.get("size") or 4.0),
+                        rotation=rotation,
+                        source="span",
+                        font_name=span.get("font"),
+                    ),
+                )
+    return candidates, image_bboxes
+
+
+def extract_word_fallback_candidates(page: fitz.Page) -> list[TextCandidate]:
+    candidates: list[TextCandidate] = []
+    grouped: dict[tuple[int, int], list[tuple]] = {}
+    try:
+        words = page.get_text("words", sort=True)
+    except Exception:
+        return candidates
+    for word in words:
+        if len(word) < 7:
+            continue
+        block_no = int(word[5])
+        line_no = int(word[6])
+        grouped.setdefault((block_no, line_no), []).append(word)
+    for line_words in grouped.values():
+        line_words.sort(key=lambda item: (item[1], item[0]))
+        text = clean_text(" ".join(str(item[4]) for item in line_words))
+        if not text:
+            continue
+        rects = [fitz.Rect(item[0], item[1], item[2], item[3]) for item in line_words]
+        bbox = union_rects(rects)
+        size = max(1.5, min(24.0, bbox.height * 0.85))
+        add_text_candidate(candidates, TextCandidate(text=text, bbox=bbox, size=size, rotation=0.0, source="word_fallback"))
+    return candidates
+
+
+def extract_raw_char_candidates(page: fitz.Page) -> list[TextCandidate]:
+    candidates: list[TextCandidate] = []
+    try:
+        raw_dict = page.get_text("rawdict")
+    except Exception:
+        return candidates
+    for block in raw_dict.get("blocks", []):
+        if block.get("type") != 0:
+            continue
+        for line in block.get("lines", []):
+            rotation = line_rotation_deg(line)
+            chars: list[str] = []
+            rects: list[fitz.Rect] = []
+            max_size = 4.0
+            font_name = None
+            for span in line.get("spans", []):
+                max_size = max(max_size, float(span.get("size") or 4.0))
+                font_name = font_name or span.get("font")
+                for char in span.get("chars", []):
+                    value = char.get("c") or ""
+                    if value:
+                        chars.append(value)
+                    if char.get("bbox"):
+                        rects.append(fitz.Rect(char.get("bbox")))
+            text = clean_text("".join(chars))
+            if not text or not rects:
+                continue
+            add_text_candidate(
+                candidates,
+                TextCandidate(
+                    text=text,
+                    bbox=union_rects(rects),
+                    size=max_size,
+                    rotation=rotation,
+                    source="raw_char",
+                    font_name=font_name,
+                ),
+            )
+    return candidates
+
+
+def extract_annotation_candidates(page: fitz.Page) -> list[TextCandidate]:
+    candidates: list[TextCandidate] = []
+    try:
+        annotations = list(page.annots() or [])
+    except Exception:
+        return candidates
+    for annot in annotations:
+        info = annot.info or {}
+        parts = [
+            clean_text(info.get("content")),
+            clean_text(info.get("title")),
+            clean_text(info.get("subject")),
+        ]
+        text = clean_text(" ".join(part for part in parts if part))
+        if not text:
+            continue
+        rect = fitz.Rect(annot.rect)
+        size = max(2.0, min(18.0, rect.height * 0.35))
+        add_text_candidate(candidates, TextCandidate(text=text, bbox=rect, size=size, rotation=0.0, source="annotation"))
+    return candidates
+
+
+def extract_text_candidates(page: fitz.Page) -> tuple[list[TextCandidate], list[fitz.Rect]]:
+    span_candidates, image_bboxes = extract_span_candidates(page)
+    pool = []
+    pool.extend(span_candidates)
+    pool.extend(extract_word_fallback_candidates(page))
+    pool.extend(extract_raw_char_candidates(page))
+    pool.extend(extract_annotation_candidates(page))
+    priority = {"annotation": 0, "raw_char": 1, "word_fallback": 2, "span": 3}
+    accepted: list[TextCandidate] = []
+    for candidate in sorted(pool, key=lambda item: (priority.get(item.source, 9), -len(normalized_text_key(item.text)))):
+        if candidate_is_duplicate(candidate, accepted):
+            continue
+        accepted.append(repair_garbled_candidate(page, candidate))
+    return accepted, image_bboxes
+
+
 def add_polyline(msp, points: Iterable[tuple[float, float]], layer: str, close: bool = False) -> int:
     pts = list(points)
     if len(pts) < 2:
         return 0
     msp.add_lwpolyline(pts, close=close, dxfattribs={"layer": layer})
     return 1
+
+
+def add_cad_text(msp, candidate: TextCandidate, page_height: float, x_offset: float) -> str:
+    if candidate.source == "garbled_unresolved":
+        layer = "PDF_TEXT_UNCERTAIN"
+        text = "OCR_REQUIRED_TEXT"
+    else:
+        layer = text_layer(candidate.text)
+        text = candidate.text
+    insert = cad_point(fitz.Point(candidate.bbox.x0, candidate.bbox.y1), page_height, x_offset)
+    dxfattribs = {
+        "height": candidate.size,
+        "layer": layer,
+        "style": detect_text_style(text, candidate.font_name),
+    }
+    if abs(candidate.rotation) >= 0.1:
+        dxfattribs["rotation"] = candidate.rotation
+    msp.add_text(text, dxfattribs=dxfattribs).set_placement(insert)
+    return layer
 
 
 def classify_page(page: fitz.Page, page_number: int) -> PageStats:
@@ -181,6 +551,11 @@ def prepare_doc() -> ezdxf.EzDxf:
     doc = ezdxf.new("R2018")
     doc.header["$INSUNITS"] = DXF_INSUNITS_MM
     doc.header["$DWGCODEPAGE"] = "ANSI_936"
+    if "Standard" in doc.styles:
+        doc.styles.get("Standard").dxf.font = DEFAULT_CJK_FONT
+    for style_name, font_file in TEXT_STYLE_FONTS.items():
+        if style_name not in doc.styles:
+            doc.styles.add(style_name, font=font_file)
     for layer_name, color in LAYER_SPECS.items():
         if layer_name not in doc.layers:
             doc.layers.add(layer_name, color=color)
@@ -198,6 +573,13 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
     text_count = 0
     dimension_text_count = 0
     title_text_count = 0
+    cjk_text_count = 0
+    garbled_text_count = 0
+    ocr_text_count = 0
+    annotation_text_count = 0
+    word_fallback_text_count = 0
+    raw_char_text_count = 0
+    text_source_counts: Counter[str] = Counter()
     x_offset = 0.0
 
     try:
@@ -246,30 +628,34 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
                     except Exception as exc:
                         findings.append(f"page {page_index}: skipped unsupported drawing item {op}: {exc}")
 
-            text_dict = page.get_text("dict")
-            for block in text_dict.get("blocks", []):
-                if block.get("type") == 1:
-                    bbox = fitz.Rect(block.get("bbox"))
-                    entity_count += add_polyline(msp, rect_points(bbox, page_height, x_offset), "PDF_IMAGE_PLACEHOLDER", close=True)
-                    continue
-                if block.get("type") != 0:
-                    continue
-                for line in block.get("lines", []):
-                    for span in line.get("spans", []):
-                        text = (span.get("text") or "").strip()
-                        if not text:
-                            continue
-                        bbox = fitz.Rect(span.get("bbox"))
-                        height = max(1.5, min(24.0, float(span.get("size") or 4.0)))
-                        layer = text_layer(text)
-                        insert = cad_point(fitz.Point(bbox.x0, bbox.y1), page_height, x_offset)
-                        msp.add_text(text, dxfattribs={"height": height, "layer": layer}).set_placement(insert)
-                        entity_count += 1
-                        text_count += 1
-                        if layer == "PDF_DIMENSIONS":
-                            dimension_text_count += 1
-                        elif layer == "PDF_TITLE_BLOCK":
-                            title_text_count += 1
+            text_candidates, image_bboxes = extract_text_candidates(page)
+            for bbox in image_bboxes:
+                entity_count += add_polyline(msp, rect_points(bbox, page_height, x_offset), "PDF_IMAGE_PLACEHOLDER", close=True)
+
+            if not text_candidates and stats.source_type in {"scanned", "mixed", "unknown"}:
+                findings.append(f"page {page_index}: no extractable PDF text was found; OCR or manual review is required for rasterized annotations")
+
+            for candidate in text_candidates:
+                layer = add_cad_text(msp, candidate, page_height, x_offset)
+                entity_count += 1
+                text_count += 1
+                text_source_counts[candidate.source] += 1
+                if candidate.source == "annotation":
+                    annotation_text_count += 1
+                elif candidate.source == "word_fallback":
+                    word_fallback_text_count += 1
+                elif candidate.source == "raw_char":
+                    raw_char_text_count += 1
+                elif candidate.source == "ocr_fallback":
+                    ocr_text_count += 1
+                elif candidate.source == "garbled_unresolved":
+                    garbled_text_count += 1
+                if layer == "PDF_DIMENSIONS":
+                    dimension_text_count += 1
+                elif layer == "PDF_TITLE_BLOCK":
+                    title_text_count += 1
+                if candidate.source != "garbled_unresolved" and contains_cjk(candidate.text):
+                    cjk_text_count += 1
 
             x_offset += page_width + PAGE_GAP
     finally:
@@ -292,6 +678,17 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
         findings.append("no dimension-like text was confidently extracted; verify dimensions manually")
         if status == "ok":
             status = "needs_review"
+    if word_fallback_text_count or raw_char_text_count:
+        findings.append("some text was recovered through fallback extraction; verify annotation placement and grouping")
+    if any(page.source_type in {"scanned", "mixed"} for page in pages):
+        findings.append("rasterized or outline-only text may still require OCR/manual review because it is not true PDF text")
+    if cjk_text_count:
+        findings.append("CJK text was written with OpenClaw CJK text styles; if DWG still shows question marks, use the DXF/PDF preview or a DWG converter with Unicode/CJK font support")
+    if garbled_text_count:
+        findings.append("some PDF text extracted as question marks or replacement glyphs; unresolved items were moved to PDF_TEXT_UNCERTAIN and require OCR/manual review")
+        status = "needs_review"
+    if ocr_text_count:
+        findings.append("some garbled PDF text was recovered with OCR fallback; verify OCR text before manufacturing use")
 
     report = ConversionReport(
         status=status,
@@ -304,6 +701,13 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
         text_count=text_count,
         dimension_text_count=dimension_text_count,
         title_text_count=title_text_count,
+        cjk_text_count=cjk_text_count,
+        garbled_text_count=garbled_text_count,
+        ocr_text_count=ocr_text_count,
+        annotation_text_count=annotation_text_count,
+        word_fallback_text_count=word_fallback_text_count,
+        raw_char_text_count=raw_char_text_count,
+        text_source_counts=dict(sorted(text_source_counts.items())),
         layers=sorted(LAYER_SPECS),
         dxf_path=str(dxf_path),
         dwg_path=None,
@@ -337,10 +741,25 @@ def layer_color(layer: str) -> tuple[int, int, int]:
         "PDF_DIMENSIONS": (0, 120, 0),
         "PDF_TITLE_BLOCK": (120, 40, 120),
         "PDF_TEXT": (30, 70, 140),
+        "PDF_TEXT_UNCERTAIN": (190, 0, 0),
         "PDF_IMAGE_PLACEHOLDER": (160, 90, 0),
         "PDF_PAGE_FRAME": (120, 120, 120),
         "REVIEW_NOTES": (190, 0, 0),
     }.get(layer, (30, 30, 30))
+
+
+def load_preview_font(size: int = 18):
+    for font_path in (
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+    ):
+        try:
+            if Path(font_path).exists():
+                return ImageFont.truetype(font_path, size=size)
+        except Exception:
+            continue
+    return None
 
 
 def render_preview(dxf_path: Path, png_path: Path, pdf_path: Path) -> None:
@@ -353,6 +772,7 @@ def render_preview(dxf_path: Path, png_path: Path, pdf_path: Path) -> None:
 
     image = Image.new("RGB", (PREVIEW_WIDTH, PREVIEW_HEIGHT), "white")
     draw = ImageDraw.Draw(image)
+    preview_font = load_preview_font()
     if not points:
         draw.text((80, 80), "No preview geometry", fill=(190, 0, 0))
         image.save(png_path)
@@ -387,7 +807,7 @@ def render_preview(dxf_path: Path, png_path: Path, pdf_path: Path) -> None:
         elif dxftype == "TEXT":
             text = entity.dxf.text or ""
             if text:
-                draw.text(tx((entity.dxf.insert.x, entity.dxf.insert.y)), text[:64], fill=color)
+                draw.text(tx((entity.dxf.insert.x, entity.dxf.insert.y)), text[:64], fill=color, font=preview_font)
 
     image.save(png_path)
     png_to_pdf(png_path, pdf_path)
@@ -456,6 +876,9 @@ Quality report: `quality_report.json`
 - Pages: {report.page_count}
 - CAD entities: {report.entity_count}
 - Extracted text entities: {report.text_count}
+- CJK text entities: {report.cjk_text_count}
+- OCR-recovered text entities: {report.ocr_text_count}
+- Unresolved garbled text entities: {report.garbled_text_count}
 - Dimension-like text entities: {report.dimension_text_count}
 - Title-block-like text entities: {report.title_text_count}
 
@@ -507,7 +930,12 @@ def run(pdf_path: Path, output_dir: Path, customer_name: str = "", project_name:
     dwg_result = try_make_dwg(dxf_path, dwg_path, report.findings)
     report.dwg_path = dwg_result
     if dwg_result:
-        report.recommended_cad_file = dwg_result
+        if report.cjk_text_count or report.garbled_text_count or report.ocr_text_count:
+            report.findings.append(
+                "DWG was generated, but Unicode/CJK text fidelity cannot be validated automatically; DXF remains the recommended CAD file until the DWG is opened and checked"
+            )
+        else:
+            report.recommended_cad_file = dwg_result
 
     render_preview(dxf_path, preview_png, preview_pdf)
     report.preview_png = str(preview_png)
@@ -559,7 +987,12 @@ def main(argv: list[str] | None = None) -> int:
         "quality_report": str(Path(report.output_dir) / "quality_report.json"),
         "source_type": report.source_type,
         "entity_count": report.entity_count,
+        "text_count": report.text_count,
+        "cjk_text_count": report.cjk_text_count,
+        "garbled_text_count": report.garbled_text_count,
+        "ocr_text_count": report.ocr_text_count,
         "dimension_text_count": report.dimension_text_count,
+        "text_source_counts": report.text_source_counts,
         "findings": report.findings,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))

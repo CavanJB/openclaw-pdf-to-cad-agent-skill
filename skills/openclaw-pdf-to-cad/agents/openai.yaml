@@ -1,3 +1,3 @@
 display_name: OpenClaw PDF to CAD
-short_description: Convert PDF engineering drawings into layered CAD packages with text-quality checks.
-default_prompt: Convert this PDF engineering drawing into a CAD delivery package, preserve Chinese/CJK text where possible, and report any review risks without guessing missing dimensions.
+short_description: Convert PDF engineering drawings into layered CAD packages with high-fidelity text placement.
+default_prompt: Convert this PDF engineering drawing into a CAD delivery package, preserve Chinese/English text content and placement where possible, and report any review risks without guessing missing dimensions.

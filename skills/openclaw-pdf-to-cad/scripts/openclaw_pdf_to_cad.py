@@ -90,6 +90,7 @@ class TextCandidate:
     rotation: float
     source: str
     font_name: str | None = None
+    origin: fitz.Point | None = None
 
 
 @dataclass
@@ -132,7 +133,7 @@ def clean_text(value: str | None) -> str:
     if not value:
         return ""
     cleaned = value.replace("\u00a0", " ").replace("\u200b", "")
-    cleaned = re.sub(r"\s+", " ", cleaned)
+    cleaned = re.sub(r"[\r\n\t\f\v]+", " ", cleaned)
     return cleaned.strip()
 
 
@@ -176,6 +177,82 @@ def detect_text_style(text: str, font_name: str | None = None) -> str:
             return "OPENCLAW_CJK_SONG"
         return "OPENCLAW_CJK"
     return "OPENCLAW_LATIN"
+
+
+def cjk_preview_font_path() -> str | None:
+    for font_path in (
+        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/System/Library/Fonts/STHeiti Medium.ttc",
+        "/System/Library/Fonts/Supplemental/Songti.ttc",
+    ):
+        if Path(font_path).exists():
+            return font_path
+    return None
+
+
+def font_path_for_style(style_name: str) -> str | None:
+    font_file = TEXT_STYLE_FONTS.get(style_name) or DEFAULT_CJK_FONT
+    direct = Path(font_file)
+    if direct.exists():
+        return str(direct)
+    for base in (
+        Path("/System/Library/Fonts/Supplemental"),
+        Path("/System/Library/Fonts"),
+        Path("/Library/Fonts"),
+    ):
+        candidate = base / font_file
+        if candidate.exists():
+            return str(candidate)
+    return cjk_preview_font_path()
+
+
+@lru_cache(maxsize=128)
+def load_measure_font(style_name: str, pixel_size: int):
+    font_path = font_path_for_style(style_name)
+    if not font_path:
+        return None
+    try:
+        return ImageFont.truetype(font_path, size=max(1, pixel_size))
+    except Exception:
+        return None
+
+
+def measure_text_width(text: str, style_name: str, height: float) -> float:
+    pixel_scale = 16
+    font = load_measure_font(style_name, max(1, int(round(height * pixel_scale))))
+    if not font:
+        return 0.0
+    try:
+        return float(font.getlength(text)) / pixel_scale
+    except Exception:
+        try:
+            bbox = font.getbbox(text)
+            return float(bbox[2] - bbox[0]) / pixel_scale
+        except Exception:
+            return 0.0
+
+
+def text_width_factor(candidate: TextCandidate, text: str, style_name: str) -> float:
+    target_width = max(0.0, candidate.bbox.width)
+    measured_width = measure_text_width(text, style_name, candidate.size)
+    if target_width <= 0.0 or measured_width <= 0.0:
+        return 1.0
+    factor = target_width / measured_width
+    if factor < 0.2 or factor > 5.0:
+        return 1.0
+    return round(factor, 4)
+
+
+def point_from_pdf_value(value) -> fitz.Point | None:
+    if not value:
+        return None
+    try:
+        return fitz.Point(value)
+    except Exception:
+        try:
+            return fitz.Point(float(value[0]), float(value[1]))
+        except Exception:
+            return None
 
 
 def cad_point(point: fitz.Point, page_height: float, x_offset: float) -> tuple[float, float]:
@@ -278,6 +355,7 @@ def add_text_candidate(pool: list[TextCandidate], candidate: TextCandidate) -> N
             rotation=candidate.rotation,
             source=candidate.source,
             font_name=candidate.font_name,
+            origin=fitz.Point(candidate.origin) if candidate.origin else None,
         )
     )
 
@@ -340,6 +418,110 @@ def repair_garbled_candidate(page: fitz.Page, candidate: TextCandidate) -> TextC
     return replace(candidate, source="garbled_unresolved")
 
 
+def tesseract_langs() -> str:
+    return os.getenv("OPENCLAW_OCR_LANGS", "chi_sim+eng").strip() or "chi_sim+eng"
+
+
+def run_tesseract(image_path: Path, *extra_args: str, timeout: int = 45) -> subprocess.CompletedProcess[str] | None:
+    tesseract = find_tesseract()
+    if not tesseract:
+        return None
+    try:
+        return subprocess.run(
+            [tesseract, str(image_path), "stdout", "-l", tesseract_langs(), *extra_args],
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=timeout,
+        )
+    except Exception:
+        return None
+
+
+def group_tesseract_words(rows: list[dict[str, str]], scale: float) -> list[TextCandidate]:
+    grouped: dict[tuple[str, str, str], list[dict[str, str]]] = {}
+    for row in rows:
+        text = normalize_ocr_text(row.get("text", ""))
+        if not text:
+            continue
+        try:
+            confidence = float(row.get("conf", "-1"))
+        except ValueError:
+            confidence = -1.0
+        if confidence < 35:
+            continue
+        key = (row.get("block_num", "0"), row.get("par_num", "0"), row.get("line_num", "0"))
+        grouped.setdefault(key, []).append(row)
+
+    candidates: list[TextCandidate] = []
+    for words in grouped.values():
+        try:
+            words.sort(key=lambda row: int(row.get("left", "0")))
+        except ValueError:
+            pass
+        parts: list[str] = []
+        rects: list[fitz.Rect] = []
+        for row in words:
+            text = normalize_ocr_text(row.get("text", ""))
+            if not text:
+                continue
+            try:
+                left = float(row["left"]) / scale
+                top = float(row["top"]) / scale
+                width = float(row["width"]) / scale
+                height = float(row["height"]) / scale
+            except Exception:
+                continue
+            parts.append(text)
+            rects.append(fitz.Rect(left, top, left + width, top + height))
+        if not parts or not rects:
+            continue
+        text = clean_text(" ".join(parts))
+        bbox = union_rects(rects)
+        size = max(1.5, min(24.0, bbox.height * 0.9))
+        add_text_candidate(
+            candidates,
+            TextCandidate(
+                text=text,
+                bbox=bbox,
+                size=size,
+                rotation=0.0,
+                source="ocr_page",
+                origin=fitz.Point(bbox.x0, bbox.y1),
+            ),
+        )
+    return candidates
+
+
+def ocr_page_candidates(page: fitz.Page) -> list[TextCandidate]:
+    if not find_tesseract():
+        return []
+    scale = 4.0
+    with tempfile.TemporaryDirectory(prefix="openclaw-page-ocr-") as tmpdir:
+        image_path = Path(tmpdir) / "page.png"
+        try:
+            pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
+            pixmap.save(image_path)
+        except Exception:
+            return []
+        result = run_tesseract(image_path, "--psm", "6", "--dpi", "300", "tsv")
+    if not result or result.returncode != 0 or not result.stdout.strip():
+        return []
+
+    lines = result.stdout.splitlines()
+    if len(lines) < 2:
+        return []
+    headers = lines[0].split("\t")
+    rows: list[dict[str, str]] = []
+    for line in lines[1:]:
+        values = line.split("\t")
+        if len(values) < len(headers):
+            values.extend([""] * (len(headers) - len(values)))
+        rows.append(dict(zip(headers, values)))
+    return group_tesseract_words(rows, scale)
+
+
 def union_rects(rects: list[fitz.Rect]) -> fitz.Rect:
     result = fitz.Rect(rects[0])
     for rect in rects[1:]:
@@ -373,6 +555,7 @@ def extract_span_candidates(page: fitz.Page) -> tuple[list[TextCandidate], list[
                         rotation=rotation,
                         source="span",
                         font_name=span.get("font"),
+                        origin=point_from_pdf_value(span.get("origin")),
                     ),
                 )
     return candidates, image_bboxes
@@ -403,6 +586,34 @@ def extract_word_fallback_candidates(page: fitz.Page) -> list[TextCandidate]:
     return candidates
 
 
+def line_text_from_chars(chars: list[dict]) -> str:
+    if not chars:
+        return ""
+    ordered = sorted(chars, key=lambda item: (fitz.Rect(item.get("bbox")).x0 if item.get("bbox") else 0.0))
+    widths: list[float] = []
+    for char in ordered:
+        if char.get("bbox"):
+            rect = fitz.Rect(char.get("bbox"))
+            if rect.width > 0:
+                widths.append(rect.width)
+    average_width = sum(widths) / len(widths) if widths else 3.0
+    parts: list[str] = []
+    previous_rect: fitz.Rect | None = None
+    for char in ordered:
+        value = char.get("c") or ""
+        if not value:
+            continue
+        rect = fitz.Rect(char.get("bbox")) if char.get("bbox") else None
+        if previous_rect and rect:
+            gap = rect.x0 - previous_rect.x1
+            if gap > max(average_width * 0.65, 1.8):
+                parts.append(" ")
+        parts.append(value)
+        if rect:
+            previous_rect = rect
+    return clean_text("".join(parts))
+
+
 def extract_raw_char_candidates(page: fitz.Page) -> list[TextCandidate]:
     candidates: list[TextCandidate] = []
     try:
@@ -414,20 +625,22 @@ def extract_raw_char_candidates(page: fitz.Page) -> list[TextCandidate]:
             continue
         for line in block.get("lines", []):
             rotation = line_rotation_deg(line)
-            chars: list[str] = []
+            chars: list[dict] = []
             rects: list[fitz.Rect] = []
             max_size = 4.0
             font_name = None
+            origin = None
             for span in line.get("spans", []):
                 max_size = max(max_size, float(span.get("size") or 4.0))
                 font_name = font_name or span.get("font")
+                origin = origin or point_from_pdf_value(span.get("origin"))
                 for char in span.get("chars", []):
                     value = char.get("c") or ""
                     if value:
-                        chars.append(value)
+                        chars.append(char)
                     if char.get("bbox"):
                         rects.append(fitz.Rect(char.get("bbox")))
-            text = clean_text("".join(chars))
+            text = line_text_from_chars(chars)
             if not text or not rects:
                 continue
             add_text_candidate(
@@ -439,6 +652,7 @@ def extract_raw_char_candidates(page: fitz.Page) -> list[TextCandidate]:
                     rotation=rotation,
                     source="raw_char",
                     font_name=font_name,
+                    origin=origin,
                 ),
             )
     return candidates
@@ -466,14 +680,16 @@ def extract_annotation_candidates(page: fitz.Page) -> list[TextCandidate]:
     return candidates
 
 
-def extract_text_candidates(page: fitz.Page) -> tuple[list[TextCandidate], list[fitz.Rect]]:
+def extract_text_candidates(page: fitz.Page, enable_page_ocr: bool = False) -> tuple[list[TextCandidate], list[fitz.Rect]]:
     span_candidates, image_bboxes = extract_span_candidates(page)
     pool = []
     pool.extend(span_candidates)
     pool.extend(extract_word_fallback_candidates(page))
     pool.extend(extract_raw_char_candidates(page))
     pool.extend(extract_annotation_candidates(page))
-    priority = {"annotation": 0, "raw_char": 1, "word_fallback": 2, "span": 3}
+    if enable_page_ocr or not pool:
+        pool.extend(ocr_page_candidates(page))
+    priority = {"annotation": 0, "raw_char": 1, "span": 2, "word_fallback": 3, "ocr_fallback": 4, "ocr_page": 5}
     accepted: list[TextCandidate] = []
     for candidate in sorted(pool, key=lambda item: (priority.get(item.source, 9), -len(normalized_text_key(item.text)))):
         if candidate_is_duplicate(candidate, accepted):
@@ -497,12 +713,17 @@ def add_cad_text(msp, candidate: TextCandidate, page_height: float, x_offset: fl
     else:
         layer = text_layer(candidate.text)
         text = candidate.text
-    insert = cad_point(fitz.Point(candidate.bbox.x0, candidate.bbox.y1), page_height, x_offset)
+    style = detect_text_style(text, candidate.font_name)
+    insert_source = candidate.origin or fitz.Point(candidate.bbox.x0, candidate.bbox.y1)
+    insert = cad_point(insert_source, page_height, x_offset)
     dxfattribs = {
         "height": candidate.size,
         "layer": layer,
-        "style": detect_text_style(text, candidate.font_name),
+        "style": style,
     }
+    width_factor = text_width_factor(candidate, text, style)
+    if abs(width_factor - 1.0) > 0.03:
+        dxfattribs["width"] = width_factor
     if abs(candidate.rotation) >= 0.1:
         dxfattribs["rotation"] = candidate.rotation
     msp.add_text(text, dxfattribs=dxfattribs).set_placement(insert)
@@ -628,7 +849,7 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
                     except Exception as exc:
                         findings.append(f"page {page_index}: skipped unsupported drawing item {op}: {exc}")
 
-            text_candidates, image_bboxes = extract_text_candidates(page)
+            text_candidates, image_bboxes = extract_text_candidates(page, enable_page_ocr=stats.source_type in {"scanned", "mixed"})
             for bbox in image_bboxes:
                 entity_count += add_polyline(msp, rect_points(bbox, page_height, x_offset), "PDF_IMAGE_PLACEHOLDER", close=True)
 
@@ -646,7 +867,7 @@ def convert_pdf_to_dxf(pdf_path: Path, dxf_path: Path) -> tuple[ConversionReport
                     word_fallback_text_count += 1
                 elif candidate.source == "raw_char":
                     raw_char_text_count += 1
-                elif candidate.source == "ocr_fallback":
+                elif candidate.source in {"ocr_fallback", "ocr_page"}:
                     ocr_text_count += 1
                 elif candidate.source == "garbled_unresolved":
                     garbled_text_count += 1

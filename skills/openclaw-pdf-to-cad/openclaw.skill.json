@@ -24,7 +24,10 @@
     "report_needs_review_explicitly": true,
     "preserve_unicode_cjk_text": true,
     "garbled_text_requires_review": true,
-    "do_not_recommend_unverified_cjk_dwg": true
+    "do_not_recommend_unverified_cjk_dwg": true,
+    "preserve_text_baseline_position": true,
+    "preserve_text_rotation": true,
+    "ocr_fallback_must_be_reported": true
   },
   "agent_contract": {
     "primary_runtime": "OpenClaw",

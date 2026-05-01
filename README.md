@@ -15,7 +15,9 @@
 - 识别 PDF 类型：矢量 PDF、扫描 PDF、混合 PDF、低置信度 PDF。
 - 从矢量 PDF 中提取线条、矩形、曲线近似、文字和图像占位框。
 - 输出分层 DXF，区分图纸几何、尺寸文字、标题栏文字、普通文字、页面边框和复核提示。
+- 高保真还原 PDF 文字位置：优先使用原 PDF 的文字基线、字号、旋转方向和宽度比例，减少文字飘位。
 - 尽量保留中文/CJK 标注；当 PDF 提取结果已经变成 `??/????` 时，会尝试 OCR 兜底，失败则标记为待复核而不是冒充正确文字。
+- 对扫描图或图片化文字，在检测到 Tesseract OCR 时会按行识别并尽量放回原始位置。
 - 生成 PNG 预览、PDF 预览、质量报告和交付 README。
 - 在配置了 DXF 转 DWG 工具时，自动补充 DWG；含中文/CJK 或 OCR 风险时，DXF 仍会作为推荐 CAD 文件，直到 DWG 被人工打开验证。
 - 对扫描图、混合图、无法确认的尺寸标记 `needs_review`，不冒充完全还原。
@@ -100,6 +102,8 @@ ln -s "$PWD/skills/openclaw-pdf-to-cad" ~/.codex/skills/openclaw-pdf-to-cad
 - 扫描 PDF 或混合 PDF 默认进入复核状态。
 - 未配置 DWG 转换器时，不假装生成 DWG。
 - 中文/CJK 标注必须保留为 Unicode；如果提取到的是问号或替换字符，输出进入 `needs_review`。
+- 文字位置必须优先使用 PDF 原生 baseline/origin，而不是简单使用 bbox 左下角。
+- OCR 文字只能作为兜底恢复，必须在报告中体现，不能冒充原生矢量文字。
 - 含中文/CJK 的 DWG 若无法自动验证字体保真，不会被冒充为首选交付文件。
 - 不能确认的尺寸和标注必须在报告里说明，不能猜。
 
@@ -145,7 +149,9 @@ This public repository contains only the PDF/image drawing workflow. It does not
 - Classifies PDFs as vector, scanned, mixed, or low-confidence.
 - Extracts vector lines, rectangles, approximated curves, text, and image placeholders from vector PDFs.
 - Produces layered DXF files separating drawing geometry, dimension-like text, title-block-like text, ordinary text, page frames, and review notes.
+- Preserves PDF text placement with baseline/origin, font size, rotation, and width-factor fitting where possible.
 - Preserves Chinese/CJK annotations as Unicode whenever possible; if extracted PDF text is already `??/????`, it tries OCR fallback and otherwise marks the item for review instead of pretending it is correct.
+- Uses line-level OCR fallback for scanned or image-based text when Tesseract is available, placing recovered text near its source location.
 - Generates PNG preview, PDF preview, quality report, and delivery README.
 - Optionally generates DWG when a DXF-to-DWG converter is configured; for Chinese/CJK or OCR-risk drawings, DXF remains the recommended CAD file until the DWG is manually verified.
 - Marks scanned, mixed, and uncertain outputs as `needs_review` instead of pretending the reconstruction is perfect.

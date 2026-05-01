@@ -71,6 +71,31 @@ def _make_garbled_pdf(path: Path) -> None:
     c.save()
 
 
+def _make_positioned_text_pdf(path: Path) -> None:
+    font_file = "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"
+    doc = fitz.open()
+    page = doc.new_page(width=420, height=297)
+    page.draw_rect(fitz.Rect(40, 80, 260, 180), color=(0, 0, 0), width=0.8)
+    page.insert_text(
+        (100, 120),
+        "A B 中文 123",
+        fontsize=10,
+        fontname="ArialUnicode",
+        fontfile=font_file,
+        color=(0, 0, 0),
+    )
+    page.insert_text(
+        (210, 160),
+        "ROT 90",
+        fontsize=8,
+        rotate=90,
+        fontname="helv",
+        color=(0, 0, 0),
+    )
+    doc.save(path)
+    doc.close()
+
+
 def test_pdf_to_cad_smoke(tmp_path: Path) -> None:
     root = Path(__file__).resolve().parents[1]
     script = root / "skills" / "openclaw-pdf-to-cad" / "scripts" / "openclaw_pdf_to_cad.py"
@@ -154,6 +179,33 @@ def test_garbled_text_is_not_written_as_fake_annotation(tmp_path: Path) -> None:
     assert "OCR_REQUIRED_TEXT" in joined
     layers = {entity.dxf.layer for entity in doc.modelspace() if entity.dxftype() == "TEXT"}
     assert "PDF_TEXT_UNCERTAIN" in layers
+
+
+def test_text_baseline_rotation_and_width_are_preserved(tmp_path: Path) -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "skills" / "openclaw-pdf-to-cad" / "scripts" / "openclaw_pdf_to_cad.py"
+    source_pdf = tmp_path / "positioned.pdf"
+    output_dir = tmp_path / "outputs"
+    _make_positioned_text_pdf(source_pdf)
+
+    result = subprocess.run(
+        ["python3", str(script), str(source_pdf), "--output-dir", str(output_dir), "--label", "positioned"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    payload = json.loads(result.stdout)
+    doc = ezdxf.readfile(payload["dxf_path"])
+    texts = [entity for entity in doc.modelspace() if entity.dxftype() == "TEXT"]
+
+    mixed = next(entity for entity in texts if "中文" in entity.dxf.text)
+    assert abs(mixed.dxf.insert.x - 100) < 0.75
+    assert abs(mixed.dxf.insert.y - (297 - 120)) < 0.75
+    assert 0.2 <= float(getattr(mixed.dxf, "width", 1.0)) <= 5.0
+
+    rotated = next(entity for entity in texts if "ROT 90" in entity.dxf.text)
+    assert abs(float(getattr(rotated.dxf, "rotation", 0.0)) - 90.0) < 0.5
 
 
 def test_openclaw_install_and_verify(tmp_path: Path) -> None:

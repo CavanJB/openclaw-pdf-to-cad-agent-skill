@@ -29,6 +29,8 @@ Use this skill for PDF engineering drawing conversion only.
 7. Never send a raw DXF alone when the delivery folder exists.
 8. If Chinese/CJK text is present, preserve it as Unicode text where possible and report `cjk_text_count`.
 9. If extracted text contains `??`, replacement glyphs, or OCR fallback warnings, treat the result as `needs_review`; do not present those markers as final customer annotations.
+10. Preserve text placement using PDF text baseline/origin, font size, rotation, and width factor when available.
+11. For scanned or image-based text, use OCR only as a fallback and report OCR-recovered entities.
 
 ## Command
 
@@ -63,6 +65,7 @@ The script prints JSON. Use these fields in the agent response:
 - `findings`: limitations and review notes
 
 When `dwg_path` exists but `recommended_cad_file` remains DXF, tell the user that the DWG was generated but Unicode/CJK fidelity needs manual CAD verification before customer delivery.
+When OCR text is present, tell the user the text was recovered from image/OCR and should be checked against the original PDF before manufacturing use.
 
 ## Handoff Message Template
 

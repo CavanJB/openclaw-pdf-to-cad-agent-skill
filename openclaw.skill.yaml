@@ -31,6 +31,9 @@ quality_policy:
   preserve_unicode_cjk_text: true
   garbled_text_requires_review: true
   do_not_recommend_unverified_cjk_dwg: true
+  preserve_text_baseline_position: true
+  preserve_text_rotation: true
+  ocr_fallback_must_be_reported: true
 install_targets:
   openclaw_default: ~/.openclaw/workspace-cadbot/skills/openclaw-pdf-to-cad
 verification:

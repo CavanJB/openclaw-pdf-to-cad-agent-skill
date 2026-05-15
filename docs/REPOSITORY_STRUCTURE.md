@@ -13,18 +13,35 @@
 │       ├── agents/
 │       │   └── openai.yaml
 │       └── scripts/
+│           ├── run_pdf_to_cad.sh
 │           ├── openclaw_pdf_to_cad.py
-│           └── run_pdf_to_cad.sh
+│           └── cadcore/           # 模块化转换引擎
+│               ├── __init__.py
+│               ├── constants.py   # 常量与正则
+│               ├── models.py      # 数据模型
+│               ├── text_utils.py  # 文本处理与去重
+│               ├── fonts.py       # 跨平台字体发现
+│               ├── extraction.py  # 多策略文本提取
+│               ├── ocr.py         # OCR 引擎
+│               ├── classification.py  # 页面分类
+│               ├── dxf_writer.py  # DXF 生成
+│               ├── preview.py     # 预览渲染
+│               ├── dwg.py         # DWG 转换
+│               ├── report.py      # 交付打包
+│               ├── runner.py      # CLI 入口与管线编排
+│               └── config.py      # YAML 配置加载
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── PUBLISHING.md
 │   └── REPOSITORY_STRUCTURE.md
 ├── scripts/
-│   └── install.sh
+│   ├── install.sh
 │   ├── install_openclaw.sh
 │   └── verify_openclaw_install.sh
 ├── tests/
-│   └── test_smoke.py
+│   ├── test_smoke.py
+│   ├── test_benchmark.py
+│   └── benchmarks/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── LICENSE
@@ -66,8 +83,23 @@ This repository is organized as a reusable Agent Skill package so future open-so
 │       ├── agents/
 │       │   └── openai.yaml
 │       └── scripts/
+│           ├── run_pdf_to_cad.sh
 │           ├── openclaw_pdf_to_cad.py
-│           └── run_pdf_to_cad.sh
+│           └── cadcore/           # Modular conversion engine
+│               ├── __init__.py
+│               ├── constants.py   # Constants and regex patterns
+│               ├── models.py      # Data models
+│               ├── text_utils.py  # Text processing and dedup
+│               ├── fonts.py       # Cross-platform font discovery
+│               ├── extraction.py  # Multi-strategy text extraction
+│               ├── ocr.py         # OCR engine
+│               ├── classification.py  # Page classification
+│               ├── dxf_writer.py  # DXF generation
+│               ├── preview.py     # Preview rendering
+│               ├── dwg.py         # DWG conversion
+│               ├── report.py      # Delivery packaging
+│               ├── runner.py      # CLI entrypoint and pipeline orchestrator
+│               └── config.py      # YAML config loading
 ├── docs/
 │   ├── ARCHITECTURE.md
 │   ├── PUBLISHING.md
@@ -77,7 +109,9 @@ This repository is organized as a reusable Agent Skill package so future open-so
 │   ├── install_openclaw.sh
 │   └── verify_openclaw_install.sh
 ├── tests/
-│   └── test_smoke.py
+│   ├── test_smoke.py
+│   ├── test_benchmark.py
+│   └── benchmarks/
 ├── README.md
 ├── CONTRIBUTING.md
 ├── LICENSE

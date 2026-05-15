@@ -119,12 +119,16 @@ pytest -q
 ### 仓库结构
 
 ```text
-skills/openclaw-pdf-to-cad/        # 可安装的 Agent Skill
-skills/openclaw-pdf-to-cad/scripts # 转换脚本入口
-docs/                              # 架构、发布和仓库结构说明
-scripts/                           # 仓库级安装脚本
-tests/                             # 不含真实图纸的自动化测试
+skills/openclaw-pdf-to-cad/              # 可安装的 Agent Skill
+skills/openclaw-pdf-to-cad/scripts/      # 转换脚本入口
+skills/openclaw-pdf-to-cad/scripts/cadcore/  # 模块化转换引擎 (12 个子模块)
+docs/                                    # 架构、发布和仓库结构说明
+scripts/                                 # 仓库级安装脚本
+tests/                                   # 不含真实图纸的自动化测试
+tests/benchmarks/                        # 精度基准评测数据
 ```
+
+**cadcore 模块化引擎：** v2.0 将原 1224 行单文件拆分为 12 个独立模块 (`constants`, `models`, `text_utils`, `fonts`, `extraction`, `ocr`, `classification`, `dxf_writer`, `preview`, `dwg`, `report`, `runner`)，每个模块职责单一、可独立测试和替换。
 
 后续如果继续开源新的图纸转换能力，建议按同样方式新增到 `skills/<skill-name>/`，不要把不同功能混在一个脚本目录里。
 
@@ -249,12 +253,16 @@ pytest -q
 ### Repository Layout
 
 ```text
-skills/openclaw-pdf-to-cad/        # Installable Agent Skill
-skills/openclaw-pdf-to-cad/scripts # Conversion entrypoints
-docs/                              # Architecture, publishing, and structure docs
-scripts/                           # Repository-level setup scripts
-tests/                             # Automated tests without real drawings
+skills/openclaw-pdf-to-cad/              # Installable Agent Skill
+skills/openclaw-pdf-to-cad/scripts/      # Conversion entrypoints
+skills/openclaw-pdf-to-cad/scripts/cadcore/  # Modular conversion engine (12 sub-modules)
+docs/                                    # Architecture, publishing, and structure docs
+scripts/                                 # Repository-level setup scripts
+tests/                                   # Automated tests without real drawings
+tests/benchmarks/                        # Benchmark precision data
 ```
+
+**cadcore modular engine:** v2.0 splits the original 1224-line monolithic script into 12 independent modules (`constants`, `models`, `text_utils`, `fonts`, `extraction`, `ocr`, `classification`, `dxf_writer`, `preview`, `dwg`, `report`, `runner`), each with a single responsibility — independently testable and replaceable.
 
 If more drawing-conversion skills are open-sourced later, add them under `skills/<skill-name>/` and keep each skill isolated.
 

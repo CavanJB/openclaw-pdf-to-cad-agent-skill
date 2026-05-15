@@ -20,6 +20,41 @@ flowchart LR
   I --> J[Quality report and README]
 ```
 
+## Modular Engine (cadcore)
+
+v2.0 splits the conversion engine into 12 modules under `scripts/cadcore/`:
+
+| Module | Responsibility |
+|--------|---------------|
+| `constants.py` | Layer specs, regex patterns, DXF/rendering constants |
+| `models.py` | Data models: `TextCandidate`, `PageStats`, `ConversionReport` |
+| `text_utils.py` | Text cleaning, CJK/garbled detection, deduplication, bbox utilities |
+| `fonts.py` | Cross-platform CJK font discovery (macOS/Linux/Windows), text measurement |
+| `extraction.py` | Four text extraction strategies (span, word fallback, raw char, annotation) with priority-based dedup |
+| `ocr.py` | Tesseract OCR integration, garbled-text repair, page-level OCR |
+| `classification.py` | PDF page classification (vector/scanned/mixed/unknown) |
+| `dxf_writer.py` | DXF R2018 generation with 8 color-coded layers, coordinate transform, text placement |
+| `preview.py` | PNG preview rendering with layer-based coloring, PNG-to-PDF conversion |
+| `dwg.py` | Optional DXF-to-DWG conversion via external converter |
+| `report.py` | Delivery packaging (README, quality_report.json, zip) |
+| `runner.py` | CLI entrypoint and pipeline orchestrator |
+| `config.py` | Optional YAML configuration file support (`openclaw-pdf-to-cad.yaml`) |
+
+## Cross-Platform Support
+
+- **macOS:** `/System/Library/Fonts/`, `/Library/Fonts/`
+- **Linux:** `/usr/share/fonts/` (Noto CJK, WenQuanYi, Droid), `~/.fonts/`
+- **Windows:** `C:\Windows\Fonts\` (ArialUni, MSYH, SimSun, SimHei)
+- **Override:** `OPENCLAW_CJK_FONT` and `OPENCLAW_CJK_FONT_DIR` environment variables
+
+## Benchmark Framework
+
+`tests/test_benchmark.py` provides precision evaluation:
+- Synthetic ground-truth PDFs with known geometry and text
+- Automated scoring: text recall, layer recall, entity/dimension/title ratios
+- Garbled-text penalty detection
+- Results written as `benchmark_results.json`
+
 ## Agent Boundary
 
 The agent should:
